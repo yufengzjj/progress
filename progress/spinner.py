@@ -15,16 +15,19 @@
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 from __future__ import unicode_literals
+
 from . import Infinite
 
 
 class Spinner(Infinite):
     phases = ('-', '\\', '|', '/')
+    suffix = ""
     hide_cursor = True
 
     def update(self):
         i = self.index % len(self.phases)
-        self.write(self.phases[i])
+        suffix = self.suffix % self
+        self.write("".join([self.phases[i], suffix]))
 
 
 class PieSpinner(Spinner):
