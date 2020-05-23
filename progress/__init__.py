@@ -15,17 +15,16 @@
 from __future__ import division, print_function
 
 import atexit
-from collections import deque
 from datetime import timedelta
 from math import ceil
 from sys import stderr
+
 try:
     from time import monotonic
 except ImportError:
     from time import time as monotonic
 
-
-__version__ = '1.5'
+__version__ = '1.5.1'
 
 HIDE_CURSOR = '\x1b[?25l'
 SHOW_CURSOR = '\x1b[?25h'
@@ -33,23 +32,19 @@ SHOW_CURSOR = '\x1b[?25h'
 
 class Infinite(object):
     file = stderr
-    sma_window = 10         # Simple Moving Average window
+    sma_window = 10  # Simple Moving Average window
     check_tty = True
     hide_cursor = True
 
     def __init__(self, message='', **kwargs):
         self.index = 0
         self.start_ts = monotonic()
-        self.avg = 0
-        self._avg_update_ts = self.start_ts
-        self._ts = self.start_ts
-        self._xput = deque(maxlen=self.sma_window)
         for key, val in kwargs.items():
             setattr(self, key, val)
-
+        self._total_used_ts = 0
         self._width = 0
         self.message = message
-
+        self._shutdown = False
         if self.file and self.is_tty():
             if self.hide_cursor:
                 print(HIDE_CURSOR, end='', file=self.file)
@@ -64,22 +59,17 @@ class Infinite(object):
 
     @property
     def elapsed(self):
-        return int(monotonic() - self.start_ts)
+        return int(monotonic() - self.start_ts) + self._total_used_ts
 
     @property
     def elapsed_td(self):
         return timedelta(seconds=self.elapsed)
 
-    def update_avg(self, n, dt):
-        if n > 0:
-            xput_len = len(self._xput)
-            self._xput.append(dt / n)
-            now = monotonic()
-            # update when we're still filling _xput, then after every second
-            if (xput_len < self.sma_window or
-                    now - self._avg_update_ts > 1):
-                self.avg = sum(self._xput) / len(self._xput)
-                self._avg_update_ts = now
+    @property
+    def avg(self):
+        if self.index > 0:
+            return self.elapsed / self.index
+        return 0
 
     def update(self):
         pass
@@ -106,6 +96,8 @@ class Infinite(object):
 
     def finish(self):
         if self.file and self.is_tty():
+            self._shutdown = True
+            self._total_used_ts = self.elapsed
             print(file=self.file)
             if self.hide_cursor:
                 print(SHOW_CURSOR, end='', file=self.file)
@@ -115,13 +107,13 @@ class Infinite(object):
         try:
             return self.file.isatty() if self.check_tty else True
         except AttributeError:
-            raise AttributeError('\'{}\' object has no attribute \'isatty\'. Try setting parameter check_tty=False.'.format(self))
+            raise AttributeError(
+                '\'{}\' object has no attribute \'isatty\'. Try setting parameter check_tty=False.'.format(self))
 
     def next(self, n=1):
-        now = monotonic()
-        dt = now - self._ts
-        self.update_avg(n, dt)
-        self._ts = now
+        if self._shutdown:
+            self.start_ts = monotonic()
+            self._shutdown = False
         self.index = self.index + n
         self.update()
 
